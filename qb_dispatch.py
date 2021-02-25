@@ -12,20 +12,17 @@
 
 # 2021-02-02 add country_codes and cut_types, code clean
 # 2021-02-23 fix regex for punctuations in film name; better error logging; add episode-chi
+# 2021-02-25 use git repository to manage other than gist
 
 import re
 import os
+import sys
 import subprocess
 import argparse
 import logging
+import configparser
 
-# Note: pay attention to path if your are using qbittorrent in docker
-# (btw, if there is no python in docker, then we can not use this script directly)
-episodes_linkdir = "/tank/MediaData/episodes/link"
-films_linkdir    = "/tank/MediaData/films/link"
-logpath = "/tank/MediaData/qb_dispatch/qb_dispatch.log"
-
-# add BFI
+# bluray source
 country_codes = ["BFI", "CEE", "CAN", "CHN", "ESP", "EUR", "FRA", "GBR", "GER", "HKG", "IND", "ITA", "JPN", "KOR", "NOR", "NLD", "POL", "RUS", "TWN", "USA"]
 cut_types = { 'cc': 'CC', 'criterion': 'CC', 'director': 'Directors Cut', 'extended': 'Extended Cut', 'uncut': 'UNCUT', 'remastered': 'Remastered', 'repack': 'Repack', 'uncensored': 'Uncensored', 'unrated': 'Unrated'}
 
@@ -37,19 +34,14 @@ def is_video_or_subtitle(fname):
             return True
     return False
 
-def link_episodes(spath, target, chi, do):
+def link_episodes(spath, target, linkdir):
     fullname = os.path.basename(spath)
-    if chi:
-        episodes_linkdir = '/tank/MediaData/episodes/link-chi'
-    else:
-        episodes_linkdir = '/tank/MediaData/episodes/link'
     logging.info(f"'{fullname}' => '{target}'")
     if not target:
-        if do:
-            logging.error(f"episodes: no short name on '{fullname}', check!")
+        logging.error(f"episodes: no short name on '{fullname}', check!")
         return
-    if do and not os.path.exists(os.path.join(episodes_linkdir, target)):
-        os.makedirs(os.path.join(episodes_linkdir, target))
+    if not os.path.exists(os.path.join(linkdir, target)):
+        os.makedirs(os.path.join(linkdir, target))
     if os.path.isdir(spath):
         for root, dirs, files in os.walk(spath):
             vfiles = [f for f in files if is_video_or_subtitle(f)]
@@ -62,8 +54,8 @@ def link_episodes(spath, target, chi, do):
                 season = ""
             else:
                 season = m[1]
-            season_dir = os.path.join(episodes_linkdir, target, season)
-            if do and not os.path.exists(season_dir):
+            season_dir = os.path.join(linkdir, target, season)
+            if not os.path.exists(season_dir):
                 os.makedirs(season_dir)
             vfiles.sort()
             for vf in vfiles:
@@ -79,11 +71,10 @@ def link_episodes(spath, target, chi, do):
                     se_str = m[1]
                 link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{os.path.join(season_dir, se_str)}.{vf.split('.')[-1]}\""
                 logging.info(f"episodes: link: {link_cmd}")
-                if do:
-                    try:
-                        subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
-                    except subprocess.CalledProcessError as e:
-                        logging.error(f"episodes: link: {e.output}")
+                try:
+                    subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
+                except subprocess.CalledProcessError as e:
+                    logging.error(f"episodes: link: {e.output}")
 
 def getname_episodes(fullname):
     fs = fullname.split('.')
@@ -99,12 +90,9 @@ def getname_episodes(fullname):
     name = '.'.join(name_t)
     return name
 
-def dispatch_episodes(path, category):
+def dispatch_episodes(path, linkdir):
     fname = os.path.basename(path)
-    if category == 'episodes-chi':
-        link_episodes(path, getname_episodes(fname), chi=True, do=True)
-    else:
-        link_episodes(path, getname_episodes(fname), chi=False, do=True)
+    link_episodes(path, getname_episodes(fname), linkdir)
 
 
 def removeChinese(context):
@@ -112,7 +100,7 @@ def removeChinese(context):
     context = filtrate.sub(r'', context) # remove all non-Chinese characters
     return context
 
-def link_film(vf, root):
+def link_film(vf, root, linkdir):
     vf_en = removeChinese(os.path.basename(vf))
     print(vf_en)
     m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
@@ -159,7 +147,7 @@ def link_film(vf, root):
                 logging.error(f"vf_en: {vf_en}, fail in AKA2 regex match")
         fname = f"{name.replace('.', ' ')} ({year}) - [{cut if cut else reso}].{suffix}"
 
-    vf_dir = os.path.join(films_linkdir, f"{name.replace('.', ' ')} ({year})")
+    vf_dir = os.path.join(linkdir, f"{name.replace('.', ' ')} ({year})")
     if not os.path.exists(vf_dir):
         os.makedirs(vf_dir)
     link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{vf_dir}/{fname}\""
@@ -172,15 +160,15 @@ def link_film(vf, root):
     except subprocess.CalledProcessError as e:
         logging.error(f"films: link: {e.output}")
 
-def dispatch_films(path):
+def dispatch_films(path, linkdir):
     if not os.path.isdir(path) and is_video_or_subtitle(path):
-        link_film(path, "")
+        link_film(path, "", linkdir)
     for root, dirs, files in os.walk(path):
         vfiles = [f for f in files if is_video_or_subtitle(f)]
         if not vfiles:
             continue
         for vf in vfiles:
-            link_film(vf, root)
+            link_film(vf, root, linkdir)
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(
@@ -189,15 +177,29 @@ if __name__ == '__main__':
                         help="content path (root path for multifile torrent")
     parser.add_argument('-c', "--category", required=True,
                         help="torrent category")
-    parser.add_argument('-n', "--name", required=True,
+    parser.add_argument("--config", default="config.ini",
+                        help="config file")
+    parser.add_argument('-n', "--name",
                         help="torrent name")
-    logging.basicConfig(filename=logpath,
+    # read config
+    config = configparser.ConfigParser()
+    config.read(args.config)
+    logging.basicConfig(filename=config['default']['logpath'],
                         format='%(asctime)-15s %(levelname)s %(message)s',
                         level=logging.INFO)
     args = parser.parse_args()
-    # path replacement: my path in docker project /tank/MediaData to /data
-    ifile = args.file.replace('data', 'tank/MediaData')
-    if args.category == "episodes" or args.category == 'episodes-chi':
-        dispatch_episodes(ifile, args.category)
-    if args.category == "films":
-        dispatch_films(ifile)
+    # path replacement
+    for substr in config['docker-path-replacement']:
+        if substr in args.file:
+            ifile = args.file.replace(substr, config['docker-path-replacement'][substr])
+            break
+
+    for cate in config['film-link-binding']:
+        if args.category == cate:
+            dispatch_films(ifile, config['film-link-binding'][cate])
+            sys.exit()
+
+    for cate in config['episode-link-binding']:
+        if args.category == cate:
+            dispatch_episodes(ifile, config['episode-link-binding'][cate])
+            sys.exit()
