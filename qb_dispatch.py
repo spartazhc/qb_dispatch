@@ -21,6 +21,7 @@ import subprocess
 import argparse
 import logging
 import configparser
+import tmdbsimple as tmdb
 
 # bluray source
 country_codes = ["BFI", "CEE", "CAN", "CHN", "ESP", "EUR", "FRA", "GBR", "GER", "HKG", "IND", "ITA", "JPN", "KOR", "NOR", "NLD", "POL", "RUS", "TWN", "USA"]
@@ -34,6 +35,80 @@ def is_video_or_subtitle(fname):
             return True
     return False
 
+def getname_episodes(fullname, tmdb_refine):
+    fullname = re.sub('S\d{2}|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN', '', fullname)
+    match = re.match(u"([\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+).*", fullname)
+    # 1. get chinese name
+    if match:
+        vf_zh = match[1].replace('.', ' ')
+    else:
+        vf_zh = ""
+    # 2. get english name
+    fs = fullname.split('.')
+    name_t = []
+    start_flag = 0
+    for item in fs:
+        if not item:
+            continue
+        if not start_flag and not (item[0].isupper() or item[0].isdigit()):
+            continue
+        elif item[0].isdigit() or item[0] == '-' or ("web" in item.lower()) or ("blu" in item.lower()):
+            break
+        name_t.append(item)
+        start_flag = 1
+    vf_en = ' '.join(name_t)
+    # 3. get year
+    match = re.search('19|20\d{2}', fullname)
+    if match:
+        year = match[0]
+    else:
+        year = ""
+
+    if tmdb_refine:
+        vf_zh, vf_en, year = refine_episode(vf_zh, vf_en, year)
+
+    return vf_zh, vf_en, year
+
+# for tv now
+def refine_translations(id):
+    vf_zh = ''
+    vf_en = ''
+    tv = tmdb.TV(id=id)
+    trans_ret = tv.translations()
+    if trans_ret:
+        for item in trans_ret['translations']:
+            if item['iso_3166_1'] == 'CN' and item['iso_639_1'] == 'zh':
+                vf_zh = item['data']['name']
+            elif item['iso_3166_1'] == 'US' and item['iso_639_1'] == 'en':
+                vf_en = item['data']['name']
+            else:
+                continue
+
+    return vf_zh, vf_en
+
+def refine_episode(in_zh, in_en, in_year):
+    vf_zh , vf_en, year = in_zh, in_en, in_year
+    if in_zh:
+        search_zh = tmdb.Search()
+        search_zh.tv(query=in_zh, year=in_year, language='zh')
+        if search_zh.results:
+            item = search_zh.results[0]
+            if item['original_language'] == 'en':
+                vf_en = item['original_name']
+            else:
+                _, vf_en = refine_translations(item['id'])
+            return item['name'], vf_en, item['first_air_date'][:4]
+    # no in_zh input or search_zh no results
+    search_en = tmdb.Search()
+    search_en.tv(query=in_en, year=in_year, language='en')
+    if search_en.results:
+        item = search_en.results[0]
+        year = item['first_air_date'][:4]
+        vf_en = item['name']
+        vf_zh, _ = refine_translations(item['id'])
+
+    return vf_zh, vf_en, year
+
 def link_episodes(spath, target, linkdir):
     fullname = os.path.basename(spath)
     logging.info(f"'{fullname}' => '{target}'")
@@ -42,9 +117,12 @@ def link_episodes(spath, target, linkdir):
         return
     if not os.path.exists(os.path.join(linkdir, target)):
         os.makedirs(os.path.join(linkdir, target))
+    print(spath)
     if os.path.isdir(spath):
+        print(1)
         for root, dirs, files in os.walk(spath):
             vfiles = [f for f in files if is_video_or_subtitle(f)]
+            print(vfiles)
             if not vfiles:
                 continue
             series_base = os.path.basename(root)
@@ -76,32 +154,20 @@ def link_episodes(spath, target, linkdir):
                 except subprocess.CalledProcessError as e:
                     logging.error(f"episodes: link: {e.output}")
 
-def getname_episodes(fullname):
-    fs = fullname.split('.')
-    name_t = []
-    start_flag = 0
-    for item in fs:
-        if not start_flag and not item[0].isupper():
-            continue
-        elif item[0].isdigit() or ("WEB" in item) or ("Blu" in item) or ((item[0] == "S" or item[0] == "E") and item[1].isdigit()):
-            break
-        name_t.append(item)
-        start_flag = 1
-    name = '.'.join(name_t)
-    return name
-
-def dispatch_episodes(path, linkdir):
+def dispatch_episodes(path, linkdir, lang, tmdb_refine):
     fname = os.path.basename(path)
-    link_episodes(path, getname_episodes(fname), linkdir)
-
-
-def removeChinese(context):
-    filtrate = re.compile(u'[\u4E00-\u9FA5]') # non-Chinese unicode range
-    context = filtrate.sub(r'', context) # remove all non-Chinese characters
-    return context
+    vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine)
+    print(vf_zh, vf_en, year)
+    if lang == 'zh' and vf_zh != "":
+        vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
+    else:
+        vf = f"{vf_en}" if not year else f"{vf_en} ({year})"
+    print(vf)
+    link_episodes(path, vf, linkdir)
 
 def link_film(vf, root, linkdir):
-    vf_en = removeChinese(os.path.basename(vf))
+    # Remove Chinese
+    vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", os.path.basename(vf))
     print(vf_en)
     m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
     # TODO: deal with extra videos
@@ -177,17 +243,23 @@ if __name__ == '__main__':
                         help="content path (root path for multifile torrent")
     parser.add_argument('-c', "--category", required=True,
                         help="torrent category")
-    parser.add_argument("--config", default="config.ini",
+    parser.add_argument("--config", default=f"{os.path.dirname(os.path.realpath(__file__))}/config.ini",
                         help="config file")
     parser.add_argument('-n', "--name",
                         help="torrent name")
+    args = parser.parse_args()
     # read config
     config = configparser.ConfigParser()
     config.read(args.config)
+    if config['default']['tmdb-refine'] == 'yes':
+        tmdb.API_KEY = config['default']['tmdb-apikey']
+        tmdb_refine = True
+    else:
+        tmdb_refine = False
     logging.basicConfig(filename=config['default']['logpath'],
                         format='%(asctime)-15s %(levelname)s %(message)s',
                         level=logging.INFO)
-    args = parser.parse_args()
+    ifile = args.file
     # path replacement
     for substr in config['docker-path-replacement']:
         if substr in args.file:
@@ -201,5 +273,5 @@ if __name__ == '__main__':
 
     for cate in config['episode-link-binding']:
         if args.category == cate:
-            dispatch_episodes(ifile, config['episode-link-binding'][cate])
+            dispatch_episodes(ifile, config['episode-link-binding'][cate], config['default']['language'], tmdb_refine)
             sys.exit()
