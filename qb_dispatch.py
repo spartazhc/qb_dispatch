@@ -237,13 +237,14 @@ def dispatch_films(path, linkdir):
             link_film(vf, root, linkdir)
 
 if __name__ == '__main__':
+    pwd = os.path.dirname(os.path.realpath(__file__))
     parser = argparse.ArgumentParser(
         description='qbittorrent download file dispatcher for nas')
     parser.add_argument('-f', "--file", required=True,
                         help="content path (root path for multifile torrent")
     parser.add_argument('-c', "--category", required=True,
                         help="torrent category")
-    parser.add_argument("--config", default=f"{os.path.dirname(os.path.realpath(__file__))}/config.ini",
+    parser.add_argument("--config", default=os.path.join(pwd, "config.ini"),
                         help="config file")
     parser.add_argument('-n', "--name",
                         help="torrent name")
@@ -256,7 +257,7 @@ if __name__ == '__main__':
         tmdb_refine = True
     else:
         tmdb_refine = False
-    logging.basicConfig(filename=config['default']['logpath'],
+    logging.basicConfig(filename=os.path.join(pwd, config['default']['logpath']),
                         format='%(asctime)-15s %(levelname)s %(message)s',
                         level=logging.INFO)
     ifile = args.file
