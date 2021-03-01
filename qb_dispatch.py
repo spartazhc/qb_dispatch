@@ -37,7 +37,7 @@ def is_video_or_subtitle(fname):
 
 def getname_episodes(fullname, tmdb_refine):
     fullname = re.sub('S\d{2}|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN', '', fullname)
-    match = re.match(u"([\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+).*", fullname)
+    match = re.match(u"([\u4E00-\u9FA5]?.*[\u4E00-\u9FA5]+).*", fullname)
     # 1. get chinese name
     if match:
         vf_zh = match[1].replace('.', ' ')
@@ -50,12 +50,12 @@ def getname_episodes(fullname, tmdb_refine):
     for item in fs:
         if not item:
             continue
-        if not start_flag and not (item[0].isupper() or item[0].isdigit()):
-            continue
+        if not start_flag and (item[0].isupper() or item[0].isdigit()):
+            start_flag = 1
         elif item[0].isdigit() or item[0] == '-' or ("web" in item.lower()) or ("blu" in item.lower()):
             break
-        name_t.append(item)
-        start_flag = 1
+        if start_flag:
+            name_t.append(item)
     vf_en = ' '.join(name_t)
     # 3. get year
     match = re.search('19|20\d{2}', fullname)
@@ -90,7 +90,7 @@ def refine_episode(in_zh, in_en, in_year):
     vf_zh , vf_en, year = in_zh, in_en, in_year
     if in_zh:
         search_zh = tmdb.Search()
-        search_zh.tv(query=in_zh, year=in_year, language='zh')
+        search_zh.tv(query=in_zh, first_air_date_year=in_year, language='zh')
         if search_zh.results:
             item = search_zh.results[0]
             if item['original_language'] == 'en':
@@ -100,7 +100,7 @@ def refine_episode(in_zh, in_en, in_year):
             return item['name'], vf_en, item['first_air_date'][:4]
     # no in_zh input or search_zh no results
     search_en = tmdb.Search()
-    search_en.tv(query=in_en, year=in_year, language='en')
+    search_en.tv(query=in_en, first_air_date_year=in_year, language='en')
     if search_en.results:
         item = search_en.results[0]
         year = item['first_air_date'][:4]
