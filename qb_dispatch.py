@@ -129,7 +129,7 @@ def link_episodes(spath, target, linkdir):
             m = re.match(r".*(S\d+).*", series_base)
             if not m:
                 logging.warning(f"episodes: no season number found, regard as only one season.")
-                season = ""
+                season = "S01"
             else:
                 season = m[1]
             season_dir = os.path.join(linkdir, target, season)
@@ -144,7 +144,7 @@ def link_episodes(spath, target, linkdir):
                         logging.warning(f"episodes: check special: {vf}")
                         continue
                     else:
-                        se_str = m2[1]
+                        se_str = season + m2[1]
                 else:
                     se_str = m[1]
                 link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{os.path.join(season_dir, se_str)}.{vf.split('.')[-1]}\""
