@@ -66,8 +66,8 @@ def getname_episodes(ori_name, tmdb_refine):
 
     if tmdb_refine:
         # if it is not S01, than du not use year to refine
-        match = re.match(".*(S\d{2}).*", ori_name)
-        if match and match[1] != 'S01':
+        match = re.search("S\d{2}", ori_name)
+        if match and match[0] != 'S01':
             year = ""
         vf_zh, vf_en, year = refine_episode(vf_zh, vf_en, year)
 
@@ -92,6 +92,7 @@ def refine_translations(id):
 
 def refine_episode(in_zh, in_en, in_year):
     vf_zh , vf_en, year = in_zh, in_en, in_year
+    print(vf_zh, vf_en, in_year)
     if in_zh:
         search_zh = tmdb.Search()
         search_zh.tv(query=in_zh, first_air_date_year=in_year, language='zh')
