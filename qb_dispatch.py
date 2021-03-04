@@ -111,9 +111,15 @@ def refine_episode(in_zh, in_en, in_year):
         idx = 0
         for i, item in enumerate(search_en.results):
             # with backdrop and perfect name match
-            if item['backdrop_path'] != None and item['name'] == in_en:
+            if item['backdrop_path'] is not None and item['name'] == in_en:
                 idx = i
                 break
+        if idx == 0:
+            for i, item in enumerate(search_en.results):
+                # first item with backdrop
+                if (item['backdrop_path'] is not None):
+                    idx = i
+                    break
         item = search_en.results[idx]
         year = item['first_air_date'][:4]
         vf_en = item['name']
