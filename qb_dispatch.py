@@ -92,7 +92,7 @@ def refine_translations(id):
 
 def refine_episode(in_zh, in_en, in_year):
     vf_zh , vf_en, year = in_zh, in_en, in_year
-    print(vf_zh, vf_en, in_year)
+    # print(vf_zh, vf_en, in_year)
     if in_zh:
         search_zh = tmdb.Search()
         search_zh.tv(query=in_zh, first_air_date_year=in_year, language='zh')
@@ -107,12 +107,21 @@ def refine_episode(in_zh, in_en, in_year):
     search_en = tmdb.Search()
     search_en.tv(query=in_en, first_air_date_year=in_year, language='en')
     if search_en.results:
-        for item in search_en.results:
-            if item['backdrop_path'] != None:
-                year = item['first_air_date'][:4]
-                vf_en = item['name']
-                vf_zh, _ = refine_translations(item['id'])
+        # print(search_en.results)
+        idx = 0
+        for i, item in enumerate(search_en.results):
+            # with backdrop and perfect name match
+            if item['backdrop_path'] != None and item['name'] == in_en:
+                idx = i
                 break
+        item = search_en.results[idx]
+        year = item['first_air_date'][:4]
+        vf_en = item['name']
+        if item['original_language'] == "zh":
+            vf_zh = item['original_name']
+        else:
+            vf_zh, _ = refine_translations(item['id'])
+
 
     return vf_zh, vf_en, year
 
@@ -124,12 +133,11 @@ def link_episodes(spath, target, linkdir):
         return
     if not os.path.exists(os.path.join(linkdir, target)):
         os.makedirs(os.path.join(linkdir, target))
-    print(spath)
+    # print(spath)
     if os.path.isdir(spath):
-        print(1)
         for root, dirs, files in os.walk(spath):
             vfiles = [f for f in files if is_video_or_subtitle(f)]
-            print(vfiles)
+            # print(vfiles)
             if not vfiles:
                 continue
             series_base = os.path.basename(root)
@@ -164,18 +172,18 @@ def link_episodes(spath, target, linkdir):
 def dispatch_episodes(path, linkdir, lang, tmdb_refine):
     fname = os.path.basename(path)
     vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine)
-    print(vf_zh, vf_en, year)
+    # print(vf_zh, vf_en, year)
     if lang == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
     else:
         vf = f"{vf_en}" if not year else f"{vf_en} ({year})"
-    print(vf)
+    # print(vf)
     link_episodes(path, vf, linkdir)
 
 def link_film(vf, root, linkdir):
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", os.path.basename(vf))
-    print(vf_en)
+    # print(vf_en)
     m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
     # TODO: deal with extra videos
     if "EXTRA" in vf_en or "FEATURETTE" in vf_en or "Sample" in vf_en or "sample" in vf_en:
