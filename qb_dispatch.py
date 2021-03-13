@@ -63,14 +63,14 @@ def getname_episodes(ori_name, tmdb_refine):
         year = match[0]
     else:
         year = ""
-
+    print(vf_zh, vf_en, year)
     if tmdb_refine:
         # if it is not S01, than du not use year to refine
         match = re.search("S\d{2}", ori_name)
         if match and match[0] != 'S01':
             year = ""
         vf_zh, vf_en, year = refine_episode(vf_zh, vf_en, year)
-
+    print(vf_zh, vf_en, year)
     return vf_zh, vf_en, year
 
 # for tv now
@@ -158,16 +158,18 @@ def link_episodes(spath, target, linkdir):
                 os.makedirs(season_dir)
             vfiles.sort()
             for vf in vfiles:
-                m = re.match(r".*(S\d{2}E\d+).*", vf)
-                if not m:
-                    m2 = re.match(r".*(E[p]?\d+).*", vf)
-                    if not m2:
+                se_str = season
+                sp = re.findall(r"(SP[E]?\d*)", vf)
+                if not sp:
+                    ep_list = re.findall(r"(E[p]?\d+)", vf)
+                    if not ep_list:
                         logging.warning(f"episodes: check special: {vf}")
                         continue
                     else:
-                        se_str = season + m2[1]
+                        for ep in ep_list:
+                            se_str += ep
                 else:
-                    se_str = m[1]
+                    se_str += sp[0]
                 link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{os.path.join(season_dir, se_str)}.{vf.split('.')[-1]}\""
                 logging.info(f"episodes: link: {link_cmd}")
                 try:
