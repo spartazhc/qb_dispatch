@@ -189,8 +189,10 @@ def dispatch_episodes(path, linkdir, lang, tmdb_refine):
     link_episodes(path, vf, linkdir)
 
 def link_film(vf, root, linkdir):
+    vf_ori = os.path.basename(vf)
+    vf_ori = re.sub("\[.*\]", "", vf_ori)
     # Remove Chinese
-    vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", os.path.basename(vf))
+    vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
     # print(vf_en)
     m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
     # TODO: deal with extra videos
@@ -299,3 +301,4 @@ if __name__ == '__main__':
         if args.category == cate:
             dispatch_episodes(ifile, config['episode-link-binding'][cate], config['default']['language'], tmdb_refine)
             sys.exit()
+
