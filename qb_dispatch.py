@@ -36,7 +36,7 @@ def is_video_or_subtitle(fname):
     return False
 
 def getname_episodes(ori_name, tmdb_refine):
-    fullname = re.sub('S\d{2}|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN', '', ori_name)
+    fullname = re.sub('S\d{2}|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
     match = re.match(u"([\u4E00-\u9FA5]?.*[\u4E00-\u9FA5]+).*", fullname)
     # 1. get chinese name
     if match:
@@ -63,14 +63,14 @@ def getname_episodes(ori_name, tmdb_refine):
         year = match[0]
     else:
         year = ""
-    print(vf_zh, vf_en, year)
+    print(f"zh:{vf_zh}, en:{vf_en}, year:{year}")
     if tmdb_refine:
         # if it is not S01, than du not use year to refine
         match = re.search("S\d{2}", ori_name)
         if match and match[0] != 'S01':
             year = ""
         vf_zh, vf_en, year = refine_episode(vf_zh, vf_en, year)
-    print(vf_zh, vf_en, year)
+    print(f"zh:{vf_zh}, en:{vf_en}, year:{year}")
     return vf_zh, vf_en, year
 
 # for tv now
@@ -134,6 +134,9 @@ def refine_episode(in_zh, in_en, in_year):
 def link_episodes(spath, target, linkdir):
     fullname = os.path.basename(spath)
     logging.info(f"'{fullname}' => '{target}'")
+    if check:
+        print(f"'{fullname}' => '{target}'")
+        sys.exit()
     if not target:
         logging.error(f"episodes: no short name on '{fullname}', check!")
         return
@@ -242,6 +245,9 @@ def link_film(vf, root, linkdir):
     if not os.path.exists(vf_dir):
         os.makedirs(vf_dir)
     link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{vf_dir}/{fname}\""
+    if check:
+        print(link_cmd)
+        sys.exit()
     if os.path.exists(f"{vf_dir}/{fname}"):
         logging.error(f"films: check: file already exists \"{vf_dir}/{fname}\"")
         return
@@ -261,6 +267,7 @@ def dispatch_films(path, linkdir):
         for vf in vfiles:
             link_film(vf, root, linkdir)
 
+check = False
 if __name__ == '__main__':
     pwd = os.path.dirname(os.path.realpath(__file__))
     parser = argparse.ArgumentParser(
@@ -273,7 +280,11 @@ if __name__ == '__main__':
                         help="config file")
     parser.add_argument('-n', "--name",
                         help="torrent name")
+    parser.add_argument('--check', action='store_true',
+                        help="just check output, not do")
     args = parser.parse_args()
+    if args.check:
+        check=True
     # read config
     config = configparser.ConfigParser()
     config.read(args.config)
