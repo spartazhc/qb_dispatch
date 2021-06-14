@@ -28,7 +28,7 @@ country_codes = ["BFI", "CEE", "CAN", "CHN", "ESP", "EUR", "FRA", "GBR", "GER", 
 cut_types = { 'cc': 'CC', 'criterion': 'CC', 'director': 'Directors Cut', 'extended': 'Extended Cut', 'uncut': 'UNCUT', 'remastered': 'Remastered', 'repack': 'Repack', 'uncensored': 'Uncensored', 'unrated': 'Unrated'}
 
 def is_video_or_subtitle(fname):
-    video_suffix = ["mp4", "mkv", "avi", "wmv", "m2ts", "rmvb", "srt", "ass"]
+    video_suffix = ["mp4", "mkv", "avi", "wmv", "m2ts", "rmvb", "srt", "ass", "sup"]
     fname = fname.lower()
     for suffix in video_suffix:
         if fname.endswith(suffix):
@@ -36,7 +36,7 @@ def is_video_or_subtitle(fname):
     return False
 
 def getname_episodes(ori_name, tmdb_refine):
-    fullname = re.sub('S\d{2}|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
+    fullname = re.sub('S\d{2}-?|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
     match = re.match(u"([\u4E00-\u9FA5]?.*[\u4E00-\u9FA5]+).*", fullname)
     # 1. get chinese name
     if match:
@@ -58,7 +58,7 @@ def getname_episodes(ori_name, tmdb_refine):
             name_t.append(item)
     vf_en = ' '.join(name_t)
     # 3. get year
-    match = re.search('19|20\d{2}', fullname)
+    match = re.search('19\d{2}|20\d{2}', fullname)
     if match:
         year = match[0]
     else:
@@ -193,7 +193,7 @@ def dispatch_episodes(path, linkdir, lang, tmdb_refine):
 
 def link_film(vf, root, linkdir):
     vf_ori = os.path.basename(vf)
-    vf_ori = re.sub("\[.*\]", "", vf_ori)
+    vf_ori = re.sub("\[.*\]|IMAX", "", vf_ori)
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
     # print(vf_en)
