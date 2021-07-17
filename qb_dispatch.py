@@ -166,7 +166,7 @@ def link_episodes(spath, target, linkdir):
                 se_str = season
                 sp = re.findall(r"(SP[E]?\d*)", vf)
                 if not sp:
-                    ep_list = re.findall(r"(E[p]?\d+)", vf)
+                    ep_list = re.findall(r"(E[Pp]?\d+)", vf)
                     if not ep_list:
                         logging.warning(f"episodes: check special: {vf}")
                         continue
