@@ -35,8 +35,9 @@ def is_video_or_subtitle(fname):
             return True
     return False
 
-def getname_episodes(ori_name, tmdb_refine):
-    fullname = re.sub('S\d{2}-?|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
+def getname_episodes(ori_name, tmdb_refine, filter_list):
+    to_filter = re.sub('S\d{2}-?|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
+    fullname = re.sub(filter_list, '', to_filter)
     match = re.match(u"([\u4E00-\u9FA5]?.*[\u4E00-\u9FA5]+).*", fullname)
     # 1. get chinese name
     if match:
@@ -180,9 +181,9 @@ def link_episodes(spath, target, linkdir):
                 except subprocess.CalledProcessError as e:
                     logging.error(f"episodes: link: {e.output}")
 
-def dispatch_episodes(path, linkdir, lang, tmdb_refine):
+def dispatch_episodes(path, linkdir, lang, tmdb_refine, filter_list):
     fname = os.path.basename(path)
-    vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine)
+    vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine, filter_list)
     # print(vf_zh, vf_en, year)
     if lang == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
@@ -191,8 +192,9 @@ def dispatch_episodes(path, linkdir, lang, tmdb_refine):
     # print(vf)
     link_episodes(path, vf, linkdir)
 
-def link_film(vf, root, linkdir):
+def link_film(vf, root, linkdir, filter_list):
     vf_ori = os.path.basename(vf)
+    vf_ori = re.sub(filter_list, "", vf_ori)
     vf_ori = re.sub("\[.*\]|IMAX", "", vf_ori)
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
@@ -257,15 +259,15 @@ def link_film(vf, root, linkdir):
     except subprocess.CalledProcessError as e:
         logging.error(f"films: link: {e.output}")
 
-def dispatch_films(path, linkdir):
+def dispatch_films(path, linkdir, filter_list):
     if not os.path.isdir(path) and is_video_or_subtitle(path):
-        link_film(path, "", linkdir)
+        link_film(path, "", linkdir, filter_list)
     for root, dirs, files in os.walk(path):
         vfiles = [f for f in files if is_video_or_subtitle(f)]
         if not vfiles:
             continue
         for vf in vfiles:
-            link_film(vf, root, linkdir)
+            link_film(vf, root, linkdir, filter_list)
 
 check = False
 if __name__ == '__main__':
@@ -305,11 +307,10 @@ if __name__ == '__main__':
 
     for cate in config['film-link-binding']:
         if args.category == cate:
-            dispatch_films(ifile, config['film-link-binding'][cate])
+            dispatch_films(ifile, config['film-link-binding'][cate], config['filter-list']['films'])
             sys.exit()
 
     for cate in config['episode-link-binding']:
         if args.category == cate:
-            dispatch_episodes(ifile, config['episode-link-binding'][cate], config['default']['language'], tmdb_refine)
+            dispatch_episodes(ifile, config['episode-link-binding'][cate], config['default']['language'], tmdb_refine, config['filter-list']['episodes'])
             sys.exit()
-
