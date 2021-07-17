@@ -64,14 +64,16 @@ def getname_episodes(ori_name, tmdb_refine, filter_list):
         year = match[0]
     else:
         year = ""
-    print(f"zh:{vf_zh}, en:{vf_en}, year:{year}")
+    logging.debug(f"getname_episodes: zh:{vf_zh}, en:{vf_en}, year:{year}")
     if tmdb_refine:
         # if it is not S01, than du not use year to refine
         match = re.search("S\d{2}", ori_name)
         if match and match[0] != 'S01':
             year = ""
         vf_zh, vf_en, year = refine_episode(vf_zh, vf_en, year)
-    print(f"zh:{vf_zh}, en:{vf_en}, year:{year}")
+        logging.debug(f"tmdb_refine: zh:{vf_zh}, en:{vf_en}, year:{year}")
+    else:
+        logging.debug(f"tmdb_refine: disabled")
     return vf_zh, vf_en, year
 
 # for tv now
@@ -93,7 +95,6 @@ def refine_translations(id):
 
 def refine_episode(in_zh, in_en, in_year):
     vf_zh , vf_en, year = in_zh, in_en, in_year
-    # print(vf_zh, vf_en, in_year)
     if in_zh:
         search_zh = tmdb.Search()
         search_zh.tv(query=in_zh, first_air_date_year=in_year, language='zh')
@@ -184,12 +185,10 @@ def link_episodes(spath, target, linkdir):
 def dispatch_episodes(path, linkdir, lang, tmdb_refine, filter_list):
     fname = os.path.basename(path)
     vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine, filter_list)
-    # print(vf_zh, vf_en, year)
     if lang == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
     else:
         vf = f"{vf_en}" if not year else f"{vf_en} ({year})"
-    # print(vf)
     link_episodes(path, vf, linkdir)
 
 def link_film(vf, root, linkdir, filter_list):
@@ -198,7 +197,7 @@ def link_film(vf, root, linkdir, filter_list):
     vf_ori = re.sub("\[.*\]|IMAX", "", vf_ori)
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
-    # print(vf_en)
+    logging.debug(f'vf_en after filter: "{vf_en}"')
     m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
     # TODO: deal with extra videos
     if "EXTRA" in vf_en or "FEATURETTE" in vf_en or "Sample" in vf_en or "sample" in vf_en:
@@ -297,7 +296,7 @@ if __name__ == '__main__':
         tmdb_refine = False
     logging.basicConfig(filename=os.path.join(pwd, config['default']['logpath']),
                         format='%(asctime)-15s %(levelname)s %(message)s',
-                        level=logging.INFO)
+                        level=logging.getLevelName(config['default']['loglevel']))
     ifile = args.file
     # path replacement
     for substr in config['docker-path-replacement']:
