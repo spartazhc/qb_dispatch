@@ -28,7 +28,9 @@ country_codes = ["BFI", "CEE", "CAN", "CHN", "ESP", "EUR", "FRA", "GBR", "GER", 
 cut_types = { 'cc': 'CC', 'criterion': 'CC', 'director': 'Directors Cut', 'extended': 'Extended Cut', 'uncut': 'UNCUT', 'remastered': 'Remastered', 'repack': 'Repack', 'uncensored': 'Uncensored', 'unrated': 'Unrated'}
 
 def is_video_or_subtitle(fname):
-    video_suffix = ["mp4", "mkv", "avi", "wmv", "m2ts", "rmvb", "srt", "ass", "sup"]
+    video_suffix = ['mp4', 'mkv', 'avi', 'wmv', 'm2ts', 'rmvb', 'ts',
+                    'webm', 'ogg', 'srt', 'ass', 'sup', 'vtt', 'aac', 'ac3',
+                    'mp3', 'opus']
     fname = fname.lower()
     for suffix in video_suffix:
         if fname.endswith(suffix):
