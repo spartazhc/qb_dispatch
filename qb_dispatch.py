@@ -140,7 +140,6 @@ def link_episodes(spath, target, linkdir):
     logging.info(f"'{fullname}' => '{target}'")
     if check:
         print(f"'{fullname}' => '{target}'")
-        sys.exit()
     if not target:
         logging.error(f"episodes: no short name on '{fullname}', check!")
         return
@@ -168,16 +167,19 @@ def link_episodes(spath, target, linkdir):
                 se_str = season
                 sp = re.findall(r"(SP[E]?\d*)", vf)
                 if not sp:
-                    ep_list = re.findall(r"(E[Pp]?\d+)", vf)
+                    ep_list = re.findall(r"E[Pp]?(\d+)", vf)
                     if not ep_list:
                         logging.warning(f"episodes: check special: {vf}")
                         continue
                     else:
                         for ep in ep_list:
-                            se_str += ep
+                            se_str += "E" + ep
                 else:
                     se_str += sp[0]
                 link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{os.path.join(season_dir, se_str)}.{vf.split('.')[-1]}\""
+                if check:
+                    print(link_cmd)
+                    continue
                 logging.info(f"episodes: link: {link_cmd}")
                 try:
                     subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
