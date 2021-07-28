@@ -38,7 +38,13 @@ def is_video_or_subtitle(fname):
     return False
 
 def getname_episodes(ori_name, tmdb_refine, filter_list):
-    to_filter = re.sub('S\d{2}-?|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
+    file_mode = False
+    if is_video_or_subtitle(ori_name):
+        # file mode, do not filter S\d+|E\d+ (some TV shows have name for every episode)
+        file_mode = True
+        to_filter = ori_name
+    else:
+        to_filter = re.sub('S\d{2}-?|E\d{2}|合集|全\d+集|Part\d+-\d+|Complete|AMZN|中英.*CMCT.*', '', ori_name)
     fullname = re.sub(filter_list, '', to_filter)
     match = re.match(u"([\u4E00-\u9FA5]?.*[\u4E00-\u9FA5]+).*", fullname)
     # 1. get chinese name
@@ -55,7 +61,8 @@ def getname_episodes(ori_name, tmdb_refine, filter_list):
             continue
         if not start_flag and (item[0].isupper() or item[0].isdigit()):
             start_flag = 1
-        elif item[0].isdigit() or item[0] == '-' or ("web" in item.lower()) or ("blu" in item.lower()):
+        elif item[0].isdigit() or (file_mode == True and (item[0]=='S' or item[0]=='E')) \
+            or item[0] == '-' or ("web" in item.lower()) or ("blu" in item.lower()):
             break
         if start_flag:
             name_t.append(item)
@@ -143,7 +150,7 @@ def link_episodes(spath, target, linkdir):
     if not target:
         logging.error(f"episodes: no short name on '{fullname}', check!")
         return
-    if not os.path.exists(os.path.join(linkdir, target)):
+    if not os.path.exists(os.path.join(linkdir, target)) and not check:
         os.makedirs(os.path.join(linkdir, target))
     # print(spath)
     if os.path.isdir(spath):
@@ -160,7 +167,7 @@ def link_episodes(spath, target, linkdir):
             else:
                 season = m[1]
             season_dir = os.path.join(linkdir, target, season)
-            if not os.path.exists(season_dir):
+            if not os.path.exists(season_dir) and not check:
                 os.makedirs(season_dir)
             vfiles.sort()
             for vf in vfiles:
@@ -185,6 +192,40 @@ def link_episodes(spath, target, linkdir):
                     subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
                 except subprocess.CalledProcessError as e:
                     logging.error(f"episodes: link: {e.output}")
+    else:
+        if not is_video_or_subtitle(spath):
+            logging.warning(f"input file is not media file")
+            return
+        vf = os.path.basename(spath)
+        m = re.match(r".*(S\d+).*", vf)
+        if not m:
+            logging.warning(f"episodes: no season number found, regard as only one season.")
+            season = "S01"
+        else:
+            season = m[1]
+        season_dir = os.path.join(linkdir, target, season)
+        if not os.path.exists(season_dir) and not check:
+            os.makedirs(season_dir)
+        se_str = season
+        sp = re.findall(r"(SP[E]?\d*)", vf)
+        if not sp:
+            ep_list = re.findall(r"E[Pp]?(\d+)", vf)
+            if not ep_list:
+                logging.warning(f"episodes: check special: {vf}")
+            else:
+                for ep in ep_list:
+                    se_str += "E" + ep
+        else:
+            se_str += sp[0]
+        link_cmd = f"ln \"{spath}\" \"{os.path.join(season_dir, se_str)}.{vf.split('.')[-1]}\""
+        if check:
+            print(link_cmd)
+            return
+        logging.info(f"episodes: linkf: {link_cmd}")
+        try:
+            subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
+        except subprocess.CalledProcessError as e:
+            logging.error(f"episodes: linkf: {e.output}")
 
 def dispatch_episodes(path, linkdir, lang, tmdb_refine, filter_list):
     fname = os.path.basename(path)
