@@ -88,17 +88,21 @@ def getname_episodes(ori_name, conf):
     return vf_zh, vf_en, year
 
 # for tv now
-def refine_translations(id):
+def refine_translations(id, isTv):
     vf_zh = ''
     vf_en = ''
-    tv = tmdb.TV(id=id)
-    trans_ret = tv.translations()
+    if isTv:
+        tv = tmdb.TV(id=id)
+        trans_ret = tv.translations()
+    else:
+        movie = tmdb.Movies(id=id)
+        trans_ret = movie.translations()
     if trans_ret:
         for item in trans_ret['translations']:
             if item['iso_3166_1'] == 'CN' and item['iso_639_1'] == 'zh':
-                vf_zh = item['data']['name']
+                vf_zh = item['data']['name'] if isTv else item['data']['title']
             elif item['iso_3166_1'] == 'US' and item['iso_639_1'] == 'en':
-                vf_en = item['data']['name']
+                vf_en = item['data']['name'] if isTv else item['data']['title']
             else:
                 continue
 
@@ -114,7 +118,7 @@ def refine_episode(in_zh, in_en, in_year):
             if item['original_language'] == 'en':
                 vf_en = item['original_name']
             else:
-                _, vf_en = refine_translations(item['id'])
+                _, vf_en = refine_translations(item['id'], isTv=True)
             return item['name'], vf_en, item['first_air_date'][:4]
     # no in_zh input or search_zh no results
     search_en = tmdb.Search()
@@ -139,8 +143,38 @@ def refine_episode(in_zh, in_en, in_year):
         if item['original_language'] == "zh":
             vf_zh = item['original_name']
         else:
-            vf_zh, _ = refine_translations(item['id'])
+            vf_zh, _ = refine_translations(item['id'], isTv=True)
 
+    return vf_zh, vf_en, year
+
+def refine_films(in_en, in_year):
+    vf_zh, vf_en, year = '', in_en, in_year
+    # print(f"in refine_films {vf_en}, {year}")
+    search_en = tmdb.Search()
+    search_en.movie(query=in_en, year=in_year, language='en', include_adult=True)
+    if not search_en.results:
+        search_en.movie(query=in_en, year=in_year, language='fre', include_adult=True)
+    if search_en.results:
+        # print(search_en.results)
+        idx = 0
+        for i, item in enumerate(search_en.results):
+            # with backdrop and perfect name match
+            if item['backdrop_path'] is not None and item['title'] == in_en:
+                idx = i
+                break
+        if idx == 0:
+            for i, item in enumerate(search_en.results):
+                # first item with backdrop
+                if (item['backdrop_path'] is not None):
+                    idx = i
+                    break
+        item = search_en.results[idx]
+        year = item['release_date'][:4]
+        vf_en = item['title']
+        if item['original_language'] == "zh":
+            vf_zh = item['original_name']
+        else:
+            vf_zh, vf_en = refine_translations(item['id'], isTv=False)
 
     return vf_zh, vf_en, year
 
@@ -242,6 +276,8 @@ def link_film(vf, root, conf):
     linkdir = conf.get('linkdir')
     filter_list = conf.get('filter_list')
     version_list = conf.get('version_list')
+    tmdb_refine = conf.get('tmdb_refine')
+    lang = conf.get('lang')
     vf_ori = os.path.basename(vf)
     if filter_list:
         vf_ori = re.sub(filter_list, "", vf_ori)
@@ -281,26 +317,38 @@ def link_film(vf, root, conf):
             print(f"vf_en: {vf_en}, fail in regex match")
             logging.error(f"vf_en: {vf_en}, fail in regex match")
             return
-        name, year, reso, suffix = m[1], m[2], "1080p", m[3]
+        name_en, year, reso, suffix = m[1], m[2], "1080p", m[3]
         if "AKA" in m[1]:
             try:
-                name = re.match(r"([\w,.'!?&-]+)\.AKA.*", m[1])[1]
+                name_en = re.match(r"([\w,.'!?&-]+)\.AKA.*", m[1])[1]
             except TypeError:
                 print(f"vf_en: {vf_en}, fail in AKA regex match")
                 logging.error(f"vf_en: {vf_en}, fail in AKA regex match")
-        fname = f"{name.replace('.', ' ')} ({year}) - [{cut if cut else reso}].{suffix}"
+        name_en = name_en.replace('.', ' ').strip()
+        fname = f"{name_en} ({year}) - [{cut if cut else reso}].{suffix}"
         logging.warning(f"no resolution found, set as 1080p.")
     else:
-        name, year, reso, suffix = m[1], m[2], m[3].lower(), m[4]
+        name_en, year, reso, suffix = m[1], m[2], m[3].lower(), m[4]
         if "AKA" in m[1]:
             try:
-                name = re.match(r"([\w,.'!?&-]+)\.AKA.*", m[1])[1]
+                name_en = re.match(r"([\w,.'!?&-]+)\.AKA.*", m[1])[1]
             except TypeError:
                 print(f"vf_en: {vf_en}, fail in AKA2 regex match")
                 logging.error(f"vf_en: {vf_en}, fail in AKA2 regex match")
-        fname = f"{name.replace('.', ' ').strip()} ({year}) - [{cut if cut else reso}].{suffix}"
+        name_en = name_en.replace('.', ' ').strip()
+        fname = f"{name_en} ({year}) - [{cut if cut else reso}].{suffix}"
 
-    vf_dir = os.path.join(linkdir, f"{name.replace('.', ' ')} ({year})")
+    if tmdb_refine:
+        ref_zh, ref_en, year = refine_films(name_en, year)
+        if ref_en:
+            name_en = ref_en
+            if lang == 'en':
+                fname = f"{ref_en} ({year}) - [{cut if cut else reso}].{suffix}"
+        # print(f"after refine: {ref_zh}, {ref_en}, {year}")
+        if ref_zh and lang == 'zh':
+            fname = f"{ref_zh} ({year}) - [{cut if cut else reso}].{suffix}"
+
+    vf_dir = os.path.join(linkdir, f"{name_en} ({year})")
     if not os.path.exists(vf_dir):
         os.makedirs(vf_dir)
     link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{vf_dir}/{fname}\""
@@ -367,6 +415,7 @@ if __name__ == '__main__':
             conf = {
                 'linkdir': config['film-link-binding'][cate],
                 'lang': config['default']['language'],
+                'tmdb_refine': tmdb_refine,
                 'filter_list': config['filter-list']['films'],
                 'version_list': config['version-list']['films']
                 }
