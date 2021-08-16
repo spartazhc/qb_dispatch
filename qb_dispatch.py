@@ -37,7 +37,9 @@ def is_video_or_subtitle(fname):
             return True
     return False
 
-def getname_episodes(ori_name, tmdb_refine, filter_list):
+def getname_episodes(ori_name, conf):
+    tmdb_refine = conf.get('tmdb_refine')
+    filter_list = conf.get('filter_list')
     file_mode = False
     if is_video_or_subtitle(ori_name):
         # file mode, do not filter S\d+|E\d+ (some TV shows have name for every episode)
@@ -227,18 +229,25 @@ def link_episodes(spath, target, linkdir):
         except subprocess.CalledProcessError as e:
             logging.error(f"episodes: linkf: {e.output}")
 
-def dispatch_episodes(path, linkdir, lang, tmdb_refine, filter_list):
+def dispatch_episodes(path, conf):
     fname = os.path.basename(path)
-    vf_zh, vf_en, year = getname_episodes(fname, tmdb_refine, filter_list)
-    if lang == 'zh' and vf_zh != "":
+    vf_zh, vf_en, year = getname_episodes(fname, conf)
+    if conf.get('language') == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
     else:
         vf = f"{vf_en}" if not year else f"{vf_en} ({year})"
-    link_episodes(path, vf, linkdir)
+    link_episodes(path, vf, conf.get('linkdir'))
 
-def link_film(vf, root, linkdir, filter_list):
+def link_film(vf, root, conf):
+    linkdir = conf.get('linkdir')
+    filter_list = conf.get('filter_list')
+    version_list = conf.get('version_list')
     vf_ori = os.path.basename(vf)
-    vf_ori = re.sub(filter_list, "", vf_ori)
+    if filter_list:
+        vf_ori = re.sub(filter_list, "", vf_ori)
+    if version_list:
+        ver = re.search(version_list, vf_ori)
+        vf_ori = re.sub(version_list, "", vf_ori)
     vf_ori = re.sub("\[.*\]|IMAX", "", vf_ori)
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
@@ -261,6 +270,10 @@ def link_film(vf, root, linkdir, filter_list):
             break
     # Normally, there should be either country or cut
     cut = country + cut
+    if version_list and ver:
+        if cut:
+            cut += ' '
+        cut += ver[0]
     if m is None:
         # sometimes there is no resolution in filename, maybe the uploader missed it
         m = re.match(r"([\w,.'!?&-]+).(\d{4})+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
@@ -285,7 +298,7 @@ def link_film(vf, root, linkdir, filter_list):
             except TypeError:
                 print(f"vf_en: {vf_en}, fail in AKA2 regex match")
                 logging.error(f"vf_en: {vf_en}, fail in AKA2 regex match")
-        fname = f"{name.replace('.', ' ')} ({year}) - [{cut if cut else reso}].{suffix}"
+        fname = f"{name.replace('.', ' ').strip()} ({year}) - [{cut if cut else reso}].{suffix}"
 
     vf_dir = os.path.join(linkdir, f"{name.replace('.', ' ')} ({year})")
     if not os.path.exists(vf_dir):
@@ -293,7 +306,7 @@ def link_film(vf, root, linkdir, filter_list):
     link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{vf_dir}/{fname}\""
     if check:
         print(link_cmd)
-        sys.exit()
+        return
     if os.path.exists(f"{vf_dir}/{fname}"):
         logging.error(f"films: check: file already exists \"{vf_dir}/{fname}\"")
         return
@@ -303,15 +316,15 @@ def link_film(vf, root, linkdir, filter_list):
     except subprocess.CalledProcessError as e:
         logging.error(f"films: link: {e.output}")
 
-def dispatch_films(path, linkdir, filter_list):
+def dispatch_films(path, conf):
     if not os.path.isdir(path) and is_video_or_subtitle(path):
-        link_film(path, "", linkdir, filter_list)
+        link_film(path, "", conf)
     for root, dirs, files in os.walk(path):
         vfiles = [f for f in files if is_video_or_subtitle(f)]
         if not vfiles:
             continue
         for vf in vfiles:
-            link_film(vf, root, linkdir, filter_list)
+            link_film(vf, root, conf)
 
 check = False
 if __name__ == '__main__':
@@ -351,10 +364,23 @@ if __name__ == '__main__':
 
     for cate in config['film-link-binding']:
         if args.category == cate:
-            dispatch_films(ifile, config['film-link-binding'][cate], config['filter-list']['films'])
+            conf = {
+                'linkdir': config['film-link-binding'][cate],
+                'lang': config['default']['language'],
+                'filter_list': config['filter-list']['films'],
+                'version_list': config['version-list']['films']
+                }
+            dispatch_films(ifile, conf)
             sys.exit()
 
     for cate in config['episode-link-binding']:
         if args.category == cate:
-            dispatch_episodes(ifile, config['episode-link-binding'][cate], config['default']['language'], tmdb_refine, config['filter-list']['episodes'])
+            conf = {
+                'linkdir': config['episode-link-binding'][cate],
+                'lang': config['default']['language'],
+                'tmdb_refine': tmdb_refine,
+                'filter_list': config['filter-list']['episodes'],
+                'version_list': config['version-list']['episodes']
+                }
+            dispatch_episodes(ifile, conf)
             sys.exit()
