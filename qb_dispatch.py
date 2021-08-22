@@ -22,6 +22,7 @@ import argparse
 import logging
 import configparser
 import tmdbsimple as tmdb
+import tinydb
 
 # bluray source
 country_codes = ["BFI", "CEE", "CAN", "CHN", "ESP", "EUR", "FRA", "GBR", "GER", "HKG", "IND", "ITA", "JPN", "KOR", "NOR", "NLD", "POL", "RUS", "TWN", "USA"]
@@ -87,7 +88,6 @@ def getname_episodes(ori_name, conf):
         logging.debug(f"tmdb_refine: disabled")
     return vf_zh, vf_en, year
 
-# for tv now
 def refine_translations(id, isTv):
     vf_zh = ''
     vf_en = ''
@@ -96,15 +96,29 @@ def refine_translations(id, isTv):
         trans_ret = tv.translations()
     else:
         movie = tmdb.Movies(id=id)
+        # TODO: this info is better to use
+        info_ret = movie.info()
+        if check:
+            print(info_ret)
+        if movie.original_language == 'en' and movie.original_title:
+            vf_en = movie.original_title
+        if movie.original_language in ['zh', 'cn'] and movie.original_title:
+            vf_zh = movie.original_title
         trans_ret = movie.translations()
     if trans_ret:
         for item in trans_ret['translations']:
-            if item['iso_3166_1'] == 'CN' and item['iso_639_1'] == 'zh':
+            if item['iso_3166_1'] == 'CN' and item['iso_639_1'] == 'zh' and not vf_zh:
                 vf_zh = item['data']['name'] if isTv else item['data']['title']
-            elif item['iso_3166_1'] == 'US' and item['iso_639_1'] == 'en':
+            elif item['iso_3166_1'] == 'US' and item['iso_639_1'] == 'en' and not vf_en:
                 vf_en = item['data']['name'] if isTv else item['data']['title']
+                print(f"find vf_en {vf_en}")
             else:
                 continue
+    else:
+        logging.warning(f"fail in refine translation: {id} (TV={isTv})")
+
+    if not vf_en and not isTv:
+        vf_en = movie.title
 
     return vf_zh, vf_en
 
@@ -147,13 +161,27 @@ def refine_episode(in_zh, in_en, in_year):
 
     return vf_zh, vf_en, year
 
-def refine_films(in_en, in_year):
-    vf_zh, vf_en, year = '', in_en, in_year
-    # print(f"in refine_films {vf_en}, {year}")
+def refine_films(in_zh, in_en, in_year, zh_first):
+    vf_zh, vf_en, year, item = in_zh, in_en, in_year, None
+    print(f"> refine_films {vf_zh} / {vf_en} ({year})")
+    logging.info(f"> refine_films {vf_zh} / {vf_en} ({year})")
     search_en = tmdb.Search()
-    search_en.movie(query=in_en, year=in_year, language='en', include_adult=True)
+    if not zh_first:
+        search_en.movie(query=in_en, year=in_year, language='en', include_adult=True)
+    else:
+        search_en.movie(query=in_zh, year=in_year, language='zh', include_adult=True)
     if not search_en.results:
+        # try france name
         search_en.movie(query=in_en, year=in_year, language='fre', include_adult=True)
+    if not search_en.results and in_zh:
+        # when we have name in zh
+        search_en.movie(query=in_zh, year=in_year, language='zh', include_adult=True)
+    if not search_en.results:
+        # in case year error
+        search_en.movie(query=in_en, language='en', include_adult=True)
+    if not search_en.results and in_zh:
+        # when we have name in zh
+        search_en.movie(query=in_zh, language='zh', include_adult=True)
     if search_en.results:
         # print(search_en.results)
         idx = 0
@@ -171,12 +199,14 @@ def refine_films(in_en, in_year):
         item = search_en.results[idx]
         year = item['release_date'][:4]
         vf_en = item['title']
-        if item['original_language'] == "zh":
-            vf_zh = item['original_name']
-        else:
-            vf_zh, vf_en = refine_translations(item['id'], isTv=False)
-
-    return vf_zh, vf_en, year
+        # if item['original_language'] == "zh":
+        #     vf_zh = item['original_title']
+        # else:
+        vf_zh, vf_en = refine_translations(item['id'], isTv=False)
+    else:
+        print(f"fail in search tmdb: {in_en} ({in_year})")
+        logging.warning(f"fail in search tmdb: {in_en} ({in_year})")
+    return vf_zh, vf_en, year, item
 
 def link_episodes(spath, target, linkdir):
     fullname = os.path.basename(spath)
@@ -198,8 +228,11 @@ def link_episodes(spath, target, linkdir):
             series_base = os.path.basename(root)
             m = re.match(r".*(S\d+).*", series_base)
             if not m:
-                logging.warning(f"episodes: no season number found, regard as only one season.")
-                season = "S01"
+                if 'SP' in series_base:
+                    season = 'SP'
+                else:
+                    logging.warning(f"episodes: no season number found, regard as only one season.")
+                    season = "S01"
             else:
                 season = m[1]
             season_dir = os.path.join(linkdir, target, season)
@@ -235,8 +268,11 @@ def link_episodes(spath, target, linkdir):
         vf = os.path.basename(spath)
         m = re.match(r".*(S\d+).*", vf)
         if not m:
-            logging.warning(f"episodes: no season number found, regard as only one season.")
-            season = "S01"
+            if 'SP' in vf:
+                season = 'SP'
+            else:
+                logging.warning(f"episodes: no season number found, regard as only one season.")
+                season = "S01"
         else:
             season = m[1]
         season_dir = os.path.join(linkdir, target, season)
@@ -278,6 +314,10 @@ def link_film(vf, root, conf):
     version_list = conf.get('version_list')
     tmdb_refine = conf.get('tmdb_refine')
     lang = conf.get('lang')
+    dir_lang = conf.get('dir_lang')
+    db = conf.get('db')
+    zh = conf.get('zh')
+
     vf_ori = os.path.basename(vf)
     if filter_list:
         vf_ori = re.sub(filter_list, "", vf_ori)
@@ -285,12 +325,24 @@ def link_film(vf, root, conf):
         ver = re.search(version_list, vf_ori)
         vf_ori = re.sub(version_list, "", vf_ori)
     vf_ori = re.sub("\[.*\]|IMAX", "", vf_ori)
+    m_zh = re.search(u"([\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+\d?)", vf_ori)
+    # 1. get chinese name
+    if m_zh:
+        vf_zh = m_zh[1].replace('.', ' ')
+    else:
+        vf_zh = ""
+        m_zh = re.search(u"([\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+\d?)", os.path.basename(root))
+        if m_zh:
+            vf_zh = m_zh[1].replace('.', ' ')
+    if zh:
+        vf_zh = zh
     # Remove Chinese
     vf_en = re.sub("[\u4E00-\u9FA5]+.*[\u4E00-\u9FA5]+.*?\.", "", vf_ori)
     logging.debug(f'vf_en after filter: "{vf_en}"')
-    m = re.match(r"\.?([\w,.'!?&-]+)\.(\d{4})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
+    print(vf_en)
+    m = re.search(r"\.?([\w,.'!?&:() -]+)\.(19\d{2}|20\d{2})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
     # TODO: deal with extra videos
-    if "EXTRA" in vf_en or "FEATURETTE" in vf_en or "Sample" in vf_en or "sample" in vf_en:
+    if "EXTRA" in vf_en or "FEATURETTE" in vf_en or "Sample" in vf_en or "sample" in vf_en or 'feature' in vf_en:
         return
     cut = ""
     country = ""
@@ -303,6 +355,9 @@ def link_film(vf, root, conf):
     for key, val in cut_types.items():
         if key in vf_en_lower:
             cut = val
+            # search again without cut
+            vf_en = re.sub(key, '', vf_en, flags=re.IGNORECASE)
+            m = re.search(r"\.?([\w,.'!?&:() -]+)\.(19\d{2}|20\d{2})+.*(720[pP]|1080[pP]|2160[pP])+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
             break
     # Normally, there should be either country or cut
     cut = country + cut
@@ -312,7 +367,7 @@ def link_film(vf, root, conf):
         cut += ver[0]
     if m is None:
         # sometimes there is no resolution in filename, maybe the uploader missed it
-        m = re.match(r"([\w,.'!?&-]+).(\d{4})+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
+        m = re.search(r"([\w,.'!?&:() -]+).(19\d{2}|20\d{2})+.*(mkv|mp4|m2ts|srt|ass)+", vf_en)
         if m is None:
             print(f"vf_en: {vf_en}, fail in regex match")
             logging.error(f"vf_en: {vf_en}, fail in regex match")
@@ -338,41 +393,95 @@ def link_film(vf, root, conf):
         name_en = name_en.replace('.', ' ').strip()
         fname = f"{name_en} ({year}) - [{cut if cut else reso}].{suffix}"
 
+    vf_dir = ''
     if tmdb_refine:
-        ref_zh, ref_en, year = refine_films(name_en, year)
+        ref_zh, ref_en, year, item = refine_films(vf_zh, name_en, year, bool(zh))
         if ref_en:
             name_en = ref_en
             if lang == 'en':
                 fname = f"{ref_en} ({year}) - [{cut if cut else reso}].{suffix}"
         # print(f"after refine: {ref_zh}, {ref_en}, {year}")
-        if ref_zh and lang == 'zh':
-            fname = f"{ref_zh} ({year}) - [{cut if cut else reso}].{suffix}"
-
-    vf_dir = os.path.join(linkdir, f"{name_en} ({year})")
-    if not os.path.exists(vf_dir):
+        if ref_zh:
+            if lang == 'zh':
+                fname = f"{ref_zh} ({year}) - [{cut if cut else reso}].{suffix}"
+            if dir_lang == 'zh':
+                vf_dir = os.path.join(linkdir, f"{ref_zh} ({year})")
+    if not vf_dir:
+        vf_dir = os.path.join(linkdir, f"{name_en} ({year})")
+    if not os.path.exists(vf_dir) and not check:
         os.makedirs(vf_dir)
     link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{vf_dir}/{fname}\""
     if check:
         print(link_cmd)
-        return
+        return vf_dir
+
+    if tmdb_refine and db is not None and item:
+        info = {
+            'vf_en': name_en,
+            'vf_zh': ref_zh,
+            'link_cmd': link_cmd,
+            **item
+            }
+        table = db.table('movies')
+        Movie = tinydb.Query()
+        if not table.search(Movie.vf_en == name_en):
+            table.insert(info)
     if os.path.exists(f"{vf_dir}/{fname}"):
-        logging.error(f"films: check: file already exists \"{vf_dir}/{fname}\"")
-        return
+        logging.error(f"films: check: file already exists \"{vf_dir}/{fname}\", source: {root}/{vf}")
+        return vf_dir
     logging.info(f"films: cmd: {link_cmd}")
+    print(link_cmd)
     try:
         subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
     except subprocess.CalledProcessError as e:
         logging.error(f"films: link: {e.output}")
 
-def dispatch_films(path, conf):
-    if not os.path.isdir(path) and is_video_or_subtitle(path):
-        link_film(path, "", conf)
+    return vf_dir
+
+def link_extras(path, film_dir):
+    # https://jellyfin.org/docs/general/server/media/movies.html
+    if not film_dir:
+        logging.warning('link_extras: no input film_dir')
+        return
+    extras_dir = os.path.join(film_dir, 'extras')
+    if not os.path.exists(extras_dir) and not check:
+        os.makedirs(extras_dir)
     for root, dirs, files in os.walk(path):
         vfiles = [f for f in files if is_video_or_subtitle(f)]
         if not vfiles:
             continue
         for vf in vfiles:
-            link_film(vf, root, conf)
+            link_cmd = f"ln \"{os.path.join(root, vf)}\" \"{extras_dir}/{vf}\""
+            if check:
+                print(link_cmd)
+                continue
+            if os.path.exists(f"{film_dir}/{vf}"):
+                logging.error(f"extras: check: file already exists \"{film_dir}/{vf}\"")
+                continue
+            logging.info(f"extras: cmd: {link_cmd}")
+            try:
+                subprocess.check_output(link_cmd, stderr=subprocess.STDOUT, shell=True)
+            except subprocess.CalledProcessError as e:
+                logging.error(f"extras: link: {e.output}")
+
+def dispatch_films(path, conf):
+    if not os.path.isdir(path) and is_video_or_subtitle(path):
+        link_film(path, "", conf)
+    for root, dirs, files in os.walk(path):
+        # print(f"{root} | {dirs} | {files}")
+        vfiles = [f for f in files if is_video_or_subtitle(f)]
+        if not vfiles:
+            continue
+        for vf in vfiles:
+            if vf.startswith('SP'):
+                # may fail with empty film_dir
+                link_extras(os.path.join(root, dir), film_dir)
+                continue
+            film_dir = link_film(vf, root, conf)
+        for dir in dirs:
+            if dir.lower() in ['extras', 'bonus']:
+                link_extras(os.path.join(root, dir), film_dir)
+                dirs.remove(dir)
 
 check = False
 if __name__ == '__main__':
@@ -385,8 +494,8 @@ if __name__ == '__main__':
                         help="torrent category")
     parser.add_argument("--config", default=os.path.join(pwd, "config.ini"),
                         help="config file")
-    parser.add_argument('-n', "--name",
-                        help="torrent name")
+    parser.add_argument('-z', "--zh", default='',
+                        help="force zh name")
     parser.add_argument('--check', action='store_true',
                         help="just check output, not do")
     args = parser.parse_args()
@@ -404,6 +513,10 @@ if __name__ == '__main__':
                         format='%(asctime)-15s %(levelname)s %(message)s',
                         level=logging.getLevelName(config['default']['loglevel']))
     ifile = args.file
+    db = None
+    if config['default']['db-path']:
+        db = tinydb.TinyDB(config['default']['db-path'])
+
     # path replacement
     for substr in config['docker-path-replacement']:
         if substr in args.file:
@@ -415,9 +528,12 @@ if __name__ == '__main__':
             conf = {
                 'linkdir': config['film-link-binding'][cate],
                 'lang': config['default']['language'],
+                'dir_lang': config['default']['film-dir-lang'],
                 'tmdb_refine': tmdb_refine,
                 'filter_list': config['filter-list']['films'],
-                'version_list': config['version-list']['films']
+                'version_list': config['version-list']['films'],
+                'zh': args.zh,
+                'db': db
                 }
             dispatch_films(ifile, conf)
             sys.exit()
