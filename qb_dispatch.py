@@ -302,7 +302,7 @@ def link_episodes(spath, target, linkdir):
 def dispatch_episodes(path, conf):
     fname = os.path.basename(path)
     vf_zh, vf_en, year = getname_episodes(fname, conf)
-    if conf.get('language') == 'zh' and vf_zh != "":
+    if conf.get('lang') == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
     else:
         vf = f"{vf_en}" if not year else f"{vf_en} ({year})"
