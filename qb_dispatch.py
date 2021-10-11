@@ -41,6 +41,8 @@ def is_video_or_subtitle(fname):
 def getname_episodes(ori_name, conf):
     tmdb_refine = conf.get('tmdb_refine')
     filter_list = conf.get('filter_list')
+    zh_in = conf.get('zh_in')
+    year_in = conf.get('year_in')
     file_mode = False
     if is_video_or_subtitle(ori_name):
         # file mode, do not filter S\d+|E\d+ (some TV shows have name for every episode)
@@ -55,6 +57,8 @@ def getname_episodes(ori_name, conf):
         vf_zh = match[1].replace('.', ' ')
     else:
         vf_zh = ""
+    if zh_in:
+        vf_zh = zh_in
     # 2. get english name
     fs = fullname.split('.')
     name_t = []
@@ -76,6 +80,8 @@ def getname_episodes(ori_name, conf):
         year = match[0]
     else:
         year = ""
+    if year_in:
+        year = year_in
     logging.debug(f"getname_episodes: zh:{vf_zh}, en:{vf_en}, year:{year}")
     if tmdb_refine:
         # if it is not S01, than du not use year to refine
@@ -158,6 +164,8 @@ def refine_episode(in_zh, in_en, in_year):
             vf_zh = item['original_name']
         else:
             vf_zh, _ = refine_translations(item['id'], isTv=True)
+    else:
+        print('refine_episode: fail to search on tmdb')
 
     return vf_zh, vf_en, year
 
@@ -302,6 +310,7 @@ def link_episodes(spath, target, linkdir):
 def dispatch_episodes(path, conf):
     fname = os.path.basename(path)
     vf_zh, vf_en, year = getname_episodes(fname, conf)
+    # print(vf_zh, vf_en)
     if conf.get('lang') == 'zh' and vf_zh != "":
         vf = f"{vf_zh}" if not year else f"{vf_zh} ({year})"
     else:
@@ -496,6 +505,8 @@ if __name__ == '__main__':
                         help="config file")
     parser.add_argument('-z', "--zh", default='',
                         help="force zh name")
+    parser.add_argument('-y', "--year", default=0,
+                        help="force year")
     parser.add_argument('--check', action='store_true',
                         help="just check output, not do")
     args = parser.parse_args()
@@ -545,7 +556,9 @@ if __name__ == '__main__':
                 'lang': config['default']['language'],
                 'tmdb_refine': tmdb_refine,
                 'filter_list': config['filter-list']['episodes'],
-                'version_list': config['version-list']['episodes']
+                'version_list': config['version-list']['episodes'],
+                'zh_in': args.zh,
+                'year_in': args.year,
                 }
             dispatch_episodes(ifile, conf)
             sys.exit()
